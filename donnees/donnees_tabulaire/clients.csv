@@ -1,0 +1,16 @@
+client_id,company_name,industry,contract_type,product_version,sla_tier,employees,onboarding_date
+CLI-001,Syntex Industries,Manufacturing,Enterprise,3.1.0,GOLD,1200,2022-03-01
+CLI-002,DataVision SAS,Finance,Business,3.0.0,SILVER,340,2021-07-15
+CLI-003,CloudBridge,IT Services,Enterprise,3.1.0,GOLD,890,2022-11-01
+CLI-004,MediCore,Healthcare,Enterprise,3.1.0,PLATINUM,2300,2020-05-01
+CLI-005,AgriTech Sud,Agriculture,Starter,2.4.2,BRONZE,45,2023-01-10
+CLI-006,UrbanLogic,Real Estate,Business,3.1.0,SILVER,230,2022-08-20
+CLI-007,Nexara Consulting,Consulting,Business,3.0.0,SILVER,180,2021-12-01
+CLI-008,FluxRetail,Retail,Enterprise,3.0.0,GOLD,670,2022-04-15
+CLI-009,PyroSoft,Software,Business,2.4.2,SILVER,95,2023-06-01
+CLI-010,GreenEnergy,Energy,Enterprise,3.1.0,GOLD,1100,2021-09-01
+CLI-011,TechNomad,IT Services,Business,2.4.2,SILVER,210,2022-02-01
+CLI-012,Arkelis,Architecture,Starter,3.0.0,BRONZE,32,2023-09-01
+CLI-013,FinancePlus,Finance,Enterprise,3.1.0,PLATINUM,780,2020-10-01
+CLI-014,StartupLab,Technology,Starter,3.1.0,BRONZE,18,2024-01-15
+CLI-015,MoovGroup,Logistics,Business,3.1.0,SILVER,420,2022-06-01

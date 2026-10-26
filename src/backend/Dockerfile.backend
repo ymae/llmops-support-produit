@@ -1,0 +1,36 @@
+# ==============================================================================
+# Dockerfile.backend - Microservice FastAPI
+# ==============================================================================
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# Définition du répertoire de travail applicatif
+WORKDIR /app
+
+# Optimisation uv : compilation du bytecode et copie des fichiers dans l'image
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Copie des fichiers de verrouillage et de métadonnées Python
+COPY pyproject.toml uv.lock ./
+
+# Installation déterministe du groupe backend uniquement via uv
+RUN uv sync --frozen --no-default-groups --group backend --no-install-project
+
+# Copie du code source backend uniquement et création du répertoire de logs
+COPY src/__init__.py ./src/__init__.py
+COPY src/backend/ ./src/backend/
+RUN mkdir -p /app/logs
+
+# Exécution sous un utilisateur non-privilégié (durcissement sécurité Docker)
+RUN useradd --create-home appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Exposition du port interne du microservice FastAPI
+EXPOSE 8080
+
+# Démarrage du serveur ASGI Uvicorn via uv run
+CMD ["uv", "run", "--no-default-groups", "--group", "backend", "uvicorn", "src.backend.api.main:app", "--host", "0.0.0.0", "--port", "8080"]

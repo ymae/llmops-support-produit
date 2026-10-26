@@ -1,0 +1,19 @@
+# ===============================================================
+# Configuration LiteLLM Proxy - Support Produit Nexus Platform
+# ================================================================
+
+model_list:
+  - model_name: nexus-support-llm
+    litellm_params:
+      model: os.environ/GROQ_MODEL_NAME
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 30
+      max_retries: 2
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  request_timeout: 30
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

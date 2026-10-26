@@ -1,0 +1,9 @@
+version_id,version_name,release_date,status,lts,breaking_changes
+VER-001,2.3.5,2023-03-15,end_of_life,false,false
+VER-002,2.4.0,2023-06-01,end_of_life,false,true
+VER-003,2.4.2,2023-09-20,maintenance_only,true,false
+VER-004,3.0.0,2024-01-01,supported,false,true
+VER-005,3.0.1,2024-01-15,supported,false,false
+VER-006,3.1.0,2024-02-01,current,true,false
+VER-007,3.1.1,2024-03-01,current,false,false
+VER-008,3.2.0-beta,2024-04-01,beta,false,true

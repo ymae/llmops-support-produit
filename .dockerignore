@@ -1,0 +1,23 @@
+# Environnements virtuels et caches locaux
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# Fichiers Git, secrets et OS
+.git/
+.gitignore
+.DS_Store
+.env
+
+# Logs, fichiers d'exemple et données volumineuses non requises en V1
+logs/*.jsonl
+logs/*.log
+.files/
+exemple/
+donnees/
+
+# Spécifications documentation
+docs/

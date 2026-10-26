@@ -1,0 +1,22 @@
+# Environnements virtuels et cache Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# Variables d'environnement et secrets
+.env
+
+# Fichiers de logs applicatifs (seul .gitkeep est versionné)
+logs/*.jsonl
+logs/*.log
+
+# Fichiers temporaires Chainlit et OS
+.chainlit/translations/
+.files/
+.DS_Store
+exemple/
+.vscode
+docs/

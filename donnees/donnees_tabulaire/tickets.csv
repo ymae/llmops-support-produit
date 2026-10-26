@@ -1,0 +1,21 @@
+ticket_id,date,client_id,product_version,title,description,severity,status,category,resolution_id
+TK-001,2024-01-08,CLI-003,3.1.0,ImportError au démarrage,"Impossible de lancer le service, ImportError: cannot import name 'DataConnector' from 'nexus.core'",HIGH,resolved,bug,KI-007
+TK-002,2024-01-10,CLI-011,2.4.2,Timeout API export,"Les exports via /api/v2/export dépassent le timeout de 30s pour les datasets > 10k lignes",MEDIUM,resolved,performance,KI-003
+TK-003,2024-01-12,CLI-007,3.0.0,Dashboard ne charge pas,"Page dashboard blanche après login, console JS: TypeError undefined is not a function",HIGH,resolved,bug,KI-009
+TK-004,2024-01-15,CLI-002,2.4.2,Question sur les webhooks,"Comment configurer un webhook pour les events de type task_completed ?",LOW,resolved,question,null
+TK-005,2024-01-18,CLI-015,3.1.0,Erreur 403 sur endpoint admin,"POST /api/v3/admin/users retourne 403 même avec token admin valide",HIGH,open,bug,null
+TK-006,2024-01-20,CLI-008,3.0.0,Migration v2 vers v3 bloquée,"Script de migration échoue à l'étape 3/7 : AlembicError relation 'projects_v2' does not exist",CRITICAL,resolved,migration,KI-011
+TK-007,2024-01-22,CLI-001,2.4.2,Intégration SSO Okta,"SAML assertion rejetée lors du login SSO, erreur: invalid_audience",HIGH,resolved,integration,KI-005
+TK-008,2024-01-25,CLI-014,3.1.0,Limite rate API atteinte,"Erreur 429 sur /api/v3/tasks en production, pourtant on ne dépasse pas 100 req/min",MEDIUM,open,api,null
+TK-009,2024-01-28,CLI-006,3.1.0,Perte de données formulaire,"Les custom fields d'un formulaire sont perdus après rafraîchissement si non sauvegardé",MEDIUM,resolved,bug,KI-014
+TK-010,2024-02-01,CLI-009,2.4.2,Compatibilité Python 3.12,"Le SDK Python lève AttributeError sur Python 3.12, compatible uniquement 3.8-3.11",HIGH,resolved,compatibility,KI-002
+TK-011,2024-02-03,CLI-004,3.1.0,Backup automatique échoue,"Job de backup nocturne échoue depuis la mise à jour 3.1.0, logs: connection refused :5433",CRITICAL,resolved,bug,KI-015
+TK-012,2024-02-05,CLI-012,3.0.0,Performance requêtes lentes,"Les requêtes sur le module Reporting prennent 8-15s au lieu de <2s depuis 2 semaines",MEDIUM,open,performance,null
+TK-013,2024-02-08,CLI-003,3.1.0,Notification email non reçue,"Les alertes email configurées ne sont pas envoyées, pas d'erreur visible dans les logs",LOW,resolved,configuration,KI-008
+TK-014,2024-02-10,CLI-010,3.1.0,Droits collaborateurs incorrects,"Un collaborateur avec rôle Viewer peut modifier des ressources, problème de permissions",CRITICAL,open,security,null
+TK-015,2024-02-12,CLI-005,2.4.2,Export CSV encodage,"Caractères spéciaux (é à ü) mal encodés dans les exports CSV, fichier inutilisable",LOW,resolved,bug,KI-001
+TK-016,2024-02-15,CLI-013,3.1.0,API pagination défectueuse,"Le paramètre cursor de pagination retourne toujours les mêmes résultats après page 2",MEDIUM,resolved,api,KI-013
+TK-017,2024-02-18,CLI-007,3.1.0,Crash module Analytics,"Module Analytics crash avec MemoryError sur datasets > 50k lignes",HIGH,open,performance,null
+TK-018,2024-02-20,CLI-002,3.0.0,Authentification 2FA bloquée,"Code TOTP refusé bien que correct, décalage horaire suspectée",HIGH,resolved,auth,KI-006
+TK-019,2024-02-22,CLI-015,3.1.0,Webhook duplicate events,"Events webhook envoyés 2 à 3 fois pour un seul événement",MEDIUM,resolved,bug,KI-016
+TK-020,2024-02-25,CLI-011,3.1.0,Question plan Enterprise,"Quelles fonctionnalités sont incluses dans le plan Enterprise vs Business ?",LOW,resolved,question,null

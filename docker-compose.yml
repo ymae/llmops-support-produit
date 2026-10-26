@@ -1,0 +1,154 @@
+# ==============================================================================
+# Docker Compose - Support Produit Nexus Platform
+# Architecture 5 conteneurs 
+# ==============================================================================
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
+
+services:
+  # --- 1. Base de données PostgreSQL dédiée à Langfuse Local ---
+  langfuse-db:
+    image: postgres:16-alpine
+    container_name: nexus-langfuse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-langfuse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-langfuse-local-db-pass}
+      POSTGRES_DB: ${POSTGRES_DB:-langfuse}
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    networks:
+      - nexus-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-langfuse} -d $${POSTGRES_DB:-langfuse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --- 2. Serveur d'Observabilité Cognitive Langfuse ---
+  langfuse-server:
+    image: langfuse/langfuse:2
+    container_name: nexus-langfuse-server
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: ${LANGFUSE_DATABASE_URL:-postgresql://langfuse:langfuse-local-db-pass@langfuse-db:5432/langfuse}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-nexus-langfuse-local-nextauth-secret-2026}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      SALT: ${SALT:-nexus-langfuse-local-salt-2026}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-nexus-org}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-Nexus Platform}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-nexus-support-v1}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-Support Produit Nexus V1}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-local-nexus}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-local-nexus}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-admin@nexus-local.internal}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Nexus Admin}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-nexus-admin-local-pass}
+    networks:
+      - nexus-net
+
+  # --- 3. Passerelle d'Inférence LLM (LiteLLM Proxy -> API Groq) ---
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: nexus-litellm-proxy
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL_NAME: ${GROQ_MODEL_NAME:-groq/openai/gpt-oss-20b}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-nexus-litellm-master-key-v1}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    networks:
+      - nexus-net
+
+  # --- 4. Microservice Backend API (FastAPI + LangChain + Pydantic + JWT) ---
+  backend-api:
+    build:
+      context: .
+      dockerfile: src/backend/Dockerfile.backend
+    container_name: nexus-backend-api
+    restart: unless-stopped
+    depends_on:
+      - litellm-proxy
+      - langfuse-server
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      LITELLM_PROXY_URL: http://litellm-proxy:4000/v1
+      # Surcharge interne Docker vers le conteneur langfuse-server (strictement local)
+      LANGFUSE_HOST: http://langfuse-server:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-local-nexus}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-local-nexus}
+      LOG_FILE_PATH: /app/logs/app.jsonl
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "uv", "run", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+    networks:
+      - nexus-net
+
+  # --- 5. Interface Opérateur Support (Chainlit) ---
+  frontend:
+    build:
+      context: .
+      dockerfile: src/frontend/Dockerfile.frontend
+    container_name: nexus-frontend
+    restart: unless-stopped
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      BACKEND_API_URL: http://backend-api:8080
+      DATABASE_URL: ""
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "uv", "run", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000')"]
+    networks:
+      - nexus-net
+
+  # --- 6. Conteneur de Tests Automatisés (Unitaires & Intégration) ---
+  tests:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile.test
+    container_name: nexus-tests
+    profiles:
+      - test
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      RUN_CONTAINER_TESTS: "true"
+      BACKEND_API_URL: http://backend-api:8080
+    networks:
+      - nexus-net
+
+networks:
+  nexus-net:
+    driver: bridge
+
+volumes:
+  langfuse_postgres_data:
