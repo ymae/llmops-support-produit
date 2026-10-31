@@ -1,5 +1,5 @@
 # ==============================================================================
-# Dockerfile.frontend - Interface Opérateur Chainlit - Support Produit Nexus
+# Dockerfile.frontend - Interface Opérateur Streamlit - Support Produit Nexus
 # ==============================================================================
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
@@ -20,18 +20,16 @@ COPY pyproject.toml uv.lock ./
 # Installation déterministe des dépendances de production via uv
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Copie du code source et de la configuration Chainlit
+# Copie du code source
 COPY src/ ./src/
-COPY .chainlit/ ./.chainlit/
-COPY chainlit.md ./chainlit.md
-RUN mkdir -p /app/logs /app/.files
+RUN mkdir -p /app/logs
 
 # Exécution sous un utilisateur non-privilégié (durcissement sécurité Docker)
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Exposition du port web Chainlit
+# Exposition du port web Streamlit
 EXPOSE 8000
 
-# Démarrage de l'interface Chainlit via uv run
-CMD ["uv", "run", "--no-dev", "chainlit", "run", "src/frontend/app.py", "--host", "0.0.0.0", "--port", "8000"]
+# Démarrage de l'interface Streamlit via uv run
+CMD ["uv", "run", "--no-dev", "streamlit", "run", "src/frontend/app.py", "--server.address", "0.0.0.0", "--server.port", "8000", "--server.headless", "true", "--browser.gatherUsageStats", "false"]

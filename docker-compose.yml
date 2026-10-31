@@ -104,7 +104,7 @@ services:
     networks:
       - nexus-net
 
-  # --- 5. Interface Opérateur Support (Chainlit) ---
+  # --- 5. Interface Opérateur Support (Streamlit) ---
   frontend:
     build:
       context: .
