@@ -1,26 +1,33 @@
-"""Interface conversationnelle Chainlit de l'Assistant Support Produit Nexus.
+"""Interface conversationnelle Streamlit de l'Assistant Support Produit Nexus.
 
-Ce module implémente l'interface utilisateur destiné aux agents du support technique
+Ce module implémente l'interface utilisateur destinée aux agents du support technique
 (`AGENT`) et aux responsables support (`MANAGER`) :
-- Page de connexion obligatoire (`@cl.password_auth_callback`) générant un jeton
-  JWT signé en HS256 (`create_access_token`) pour l'opérateur connecté.
-- Sélecteurs de contexte ticket (`ChatSettings` : `CLI-001`..`CLI-015` et `severity`).
+- Page de connexion obligatoire générant un jeton JWT signé en HS256
+  (`create_access_token`) pour l'opérateur connecté.
+- Sélecteurs de contexte ticket (`CLI-001`..`CLI-015` et `severity`) dans la barre latérale.
 - Communication HTTP sécurisée par jeton JWT Bearer avec le microservice `backend-api`.
-- Panneau latéral de restitution (`ElementSidebar`) et boutons d'action pour la
-  validation humaine obligatoire (Human-in-the-Loop) et l'escalade.
+- Panneau latéral de restitution et boutons d'action pour la validation humaine
+  obligatoire (Human-in-the-Loop) et l'escalade.
+
+Lancement : `uv run streamlit run src/frontend/app.py`
 """
 
+from dataclasses import dataclass
+from pathlib import Path
+import sys
 import os
 from typing import Any, Optional
 import uuid
 
-# Suppression préventive de DATABASE_URL pour éviter l'activation implicite
-# de ChainlitDataLayer (asyncpg) lors de l'authentification opérateur.
-os.environ.pop("DATABASE_URL", None)
-
-import chainlit as cl
-from chainlit.input_widget import Select
 import httpx
+import streamlit as st
+
+# `streamlit run` n'ajoute que le dossier du script à sys.path : on ajoute la
+# racine du projet pour que les imports `src.*` fonctionnent aussi hors Docker.
+# sinon, ça plante avec le message : ModuleNotFoundError: No module named 'src'
+PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from src.backend.core.config import get_settings
 from src.backend.core.constants import CLIENT_ID_OPTIONS, SEVERITY_OPTIONS
@@ -31,20 +38,36 @@ from src.backend.core.security import (
     verify_credentials_constant_time,
 )
 
+DEFAULT_CLIENT_ID = "CLI-003"
+DEFAULT_SEVERITY = "MEDIUM"
 
-@cl.password_auth_callback
-def authenticate_operator(username: str, password: str) -> Optional[cl.User]:
+
+@dataclass(frozen=True)
+class OperatorSession: # pour remplacer cl.User de Chainlit
+    """Opérateur authentifié avec son rôle et son jeton JWT"""
+    identifier: str
+    role: str
+    display_name: str
+    access_token: str
+
+
+@dataclass(frozen=True)
+class HumanAction:  # pour remplacer cl.Action
+    """Action de validation humaine (valider, escalader ou rejeter)"""
+    name: str
+    label: str
+    payload: dict[str, Any]
+
+
+def authenticate_operator(username: str, password: str) -> Optional[OperatorSession]:
     """Authentifie l'opérateur support, lui attribue son rôle et génère un jeton JWT (HS256).
 
-    Cette fonction est appelée automatiquement par Chainlit lors de la soumission
-    du formulaire de connexion protégé par `CHAINLIT_AUTH_SECRET`.
-
     Args:
-        username: Nom d'utilisateur saisi dans l'interface Chainlit.
-        password: Mot de passe saisi dans l'interface Chainlit.
+        username: Nom d'utilisateur saisi dans le formulaire de connexion.
+        password: Mot de passe saisi dans le formulaire de connexion.
 
     Returns:
-        Une instance `cl.User` enrichie du rôle métier (`AGENT` ou `MANAGER`) et
+        Une `OperatorSession` enrichie du rôle métier (`AGENT` ou `MANAGER`) et
         d'un jeton `access_token` JWT signé en HS256, ou `None` si invalide.
     """
     operator_user = authenticate_operator_credentials(username, password)
@@ -62,13 +85,11 @@ def authenticate_operator(username: str, password: str) -> Optional[cl.User]:
         else "Responsable Support (Manager)"
     )
 
-    return cl.User(
+    return OperatorSession(
         identifier=operator_user.username,
-        metadata={
-            "role": operator_user.role.value,
-            "display_name": display_name,
-            "access_token": jwt_token,
-        },
+        role=operator_user.role.value,
+        display_name=display_name,
+        access_token=jwt_token,
     )
 
 
@@ -79,7 +100,7 @@ def build_sidebar_markdown(
     severity: str,
     response_data: Optional[dict[str, Any]] = None,
 ) -> str:
-    """Génère le contenu Markdown affiché dans le panneau latéral `ElementSidebar`.
+    """Génère le contenu Markdown affiché dans le panneau latéral.
 
     Restitue l'état courant du ticket, le profil de l'opérateur connecté et,
     lorsqu'une réponse LLM a été reçue, les indicateurs de gouvernance humaine
@@ -93,7 +114,7 @@ def build_sidebar_markdown(
         response_data: Dictionnaire optionnel issu de `ChatResponse`.
 
     Returns:
-        Une chaîne Markdown formatée pour le composant `cl.Text` du panneau latéral.
+        Une chaîne Markdown formatée pour le panneau latéral.
     """
     lines = [
         "### Opérateur Connecté",
@@ -149,42 +170,7 @@ def build_sidebar_markdown(
     return "\n".join(lines)
 
 
-async def update_context_sidebar(
-    operator_id: str,
-    operator_role: str,
-    client_id: str,
-    severity: str,
-    response_data: Optional[dict[str, Any]] = None,
-) -> None:
-    """Met à jour le panneau latéral `ElementSidebar` de Chainlit.
-
-    Args:
-        operator_id: Identifiant de l'opérateur authentifié.
-        operator_role: Rôle métier de l'opérateur (`AGENT` ou `MANAGER`).
-        client_id: Identifiant du client actif.
-        severity: Niveau de sévérité actif.
-        response_data: Dictionnaire optionnel issu de la réponse `ChatResponse`.
-
-    Returns:
-        None.
-    """
-    markdown_content = build_sidebar_markdown(
-        operator_id=operator_id,
-        operator_role=operator_role,
-        client_id=client_id,
-        severity=severity,
-        response_data=response_data,
-    )
-    sidebar_element = cl.Text(
-        name="Contexte Ticket & Gouvernance",
-        content=markdown_content,
-        display="inline",
-    )
-    await cl.ElementSidebar.set_title("Contexte Support Nexus")
-    await cl.ElementSidebar.set_elements([sidebar_element])
-
-
-async def call_backend_chat_api(
+def call_backend_chat_api(
     payload: dict[str, Any],
     access_token: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -218,8 +204,8 @@ async def call_backend_chat_api(
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=settings.llm_request_timeout + 5.0) as client:
-        response = await client.post(endpoint_url, headers=headers, json=payload)
+    with httpx.Client(timeout=settings.llm_request_timeout + 5.0) as client:
+        response = client.post(endpoint_url, headers=headers, json=payload)
         response.raise_for_status()
         return response.json()
 
@@ -229,8 +215,8 @@ def build_human_validation_actions(
     client_id: str,
     severity: str,
     escalation_required: bool,
-) -> list[cl.Action]:
-    """Construit les boutons d'action permettant la validation humaine ou l'escalade.
+) -> list[HumanAction]:
+    """Construit les actions permettant la validation humaine ou l'escalade.
 
     Args:
         trace_id: Identifiant unique de la trace d'inférence.
@@ -239,7 +225,7 @@ def build_human_validation_actions(
         escalation_required: Booléen indiquant si l'escalade Manager est requise.
 
     Returns:
-        Une liste d'objets `cl.Action` attachés au message de réponse Chainlit.
+        Une liste de `HumanAction` affichées sous le message de réponse.
     """
     action_payload = {
         "trace_id": trace_id,
@@ -249,321 +235,322 @@ def build_human_validation_actions(
     }
 
     return [
-        cl.Action(
+        HumanAction(
             name="validate_response",
-            payload=action_payload,
             label="✅ Valider la réponse (Prêt pour envoi client)",
+            payload=action_payload,
         ),
-        cl.Action(
+        HumanAction(
             name="escalate_response",
-            payload=action_payload,
             label="🚨 Escalader au Responsable Support (MANAGER)",
-        ),
-        cl.Action(
-            name="reject_response",
             payload=action_payload,
+        ),
+        HumanAction(
+            name="reject_response",
             label="❌ Rejeter / Reformuler le brouillon",
+            payload=action_payload,
         ),
     ]
 
 
-@cl.on_chat_start
-async def on_chat_start() -> None:
-    """Initialise la session opérateur, le jeton JWT, les `ChatSettings` et l'`ElementSidebar`.
-
-    Récupère l'utilisateur authentifié dans la session Chainlit, configure les
-    valeurs par défaut (`CLI-003`, `MEDIUM`) et affiche les sélecteurs de contexte.
+def build_action_feedback(
+    action: HumanAction,
+    operator_id: str,
+    operator_role: str,
+) -> str:
+    """Construit le message de confirmation d'une action de validation humaine.
 
     Args:
-        Aucun argument requis.
+        action: Action déclenchée par l'opérateur.
+        operator_id: Identifiant de l'opérateur connecté.
+        operator_role: Rôle métier de l'opérateur (`AGENT` ou `MANAGER`).
 
     Returns:
-        None.
+        Le message Markdown à ajouter à la conversation.
     """
-    user: Optional[cl.User] = cl.user_session.get("user")
-    operator_id = user.identifier if user else "agent"
-    operator_role = (
-        str(user.metadata.get("role", "AGENT"))
-        if user and user.metadata
-        else "AGENT"
-    )
-    access_token = (
-        str(user.metadata.get("access_token"))
-        if user and user.metadata and user.metadata.get("access_token")
-        else create_access_token(
-            operator_id=operator_id,
-            operator_role=OperatorRole(operator_role),
+    payload = action.payload
+    trace_id = payload.get("trace_id", "N/A")
+    client_id = payload.get("client_id", "N/A")
+
+    if action.name == "validate_response":
+        # Si une escalade est requise et que l'opérateur est simple AGENT, bloquer
+        if payload.get("escalation_required") and operator_role == "AGENT":
+            return (
+                f"⚠️ **Validation bloquée pour le profil `AGENT` :** Le ticket `{client_id}` "
+                f"(Trace `{trace_id}`) requiert une escalade vers un profil **`MANAGER`** "
+                "avant toute communication externe."
+            )
+        return (
+            f"✅ **Réponse validée** par `{operator_id}` (`{operator_role}`) "
+            f"pour envoi au client **`{client_id}`** *(Trace : `{trace_id}`)*."
         )
+
+    if action.name == "escalate_response":
+        return (
+            f"🚨 **Escalade enregistrée vers le Responsable Support (`MANAGER`)** "
+            f"par `{operator_id}` (`{operator_role}`) — Client : **`{client_id}`**, "
+            f"Sévérité : **`{payload.get('severity', 'N/A')}`**, Trace : `{trace_id}`."
+        )
+
+    return (
+        f"❌ **Brouillon rejeté** par `{operator_id}` *(Trace : `{trace_id}`)*. "
+        "Vous pouvez préciser votre question ou ajuster le contexte dans la barre latérale."
     )
-    session_id = f"sess-{uuid.uuid4().hex[:10]}"
 
-    # Valeurs initiales par défaut du contexte ticket (alignées sur le cas GD-01)
-    default_client_id = "CLI-003"
-    default_severity = "MEDIUM"
 
-    # Enregistrement de l'état initial et du JWT dans la session utilisateur Chainlit
-    cl.user_session.set("session_id", session_id)
-    cl.user_session.set("operator_id", operator_id)
-    cl.user_session.set("operator_role", operator_role)
-    cl.user_session.set("access_token", access_token)
-    cl.user_session.set("client_id", default_client_id)
-    cl.user_session.set("severity", default_severity)
-    cl.user_session.set("history", [])
+def build_governance_banner(
+    escalation_required: bool,
+    client_id: str,
+    trace_id: str,
+) -> str:
+    """Construit le bandeau de gouvernance ajouté à chaque réponse de l'assistant.
 
-    # Déclaration des sélecteurs ChatSettings pour le choix du client et de la sévérité
-    await cl.ChatSettings(
-        [
-            Select(
-                id="client_id",
-                label="Client concerné par le ticket (CLI-001 à CLI-015)",
-                values=CLIENT_ID_OPTIONS,
-                initial_value=default_client_id,
-            ),
-            Select(
-                id="severity",
-                label="Niveau de sévérité du ticket (SLA)",
-                values=SEVERITY_OPTIONS,
-                initial_value=default_severity,
-            ),
+    Args:
+        escalation_required: Indique si une escalade Manager est requise.
+        client_id: Identifiant du client concerné.
+        trace_id: Identifiant de la trace d'inférence.
+
+    Returns:
+        Le bandeau Markdown (alerte d'escalade ou rappel de validation humaine).
+    """
+    if escalation_required:
+        return (
+            "\n\n---\n🚨 **ALERTE GOUVERNANCE :** Ce ticket présente un caractère critique "
+            "ou sensible (`escalation_required = True`). **L'envoi direct est déconseillé : "
+            "veuillez escalader au Responsable Support (`MANAGER`).**"
+        )
+    return (
+        "\n\n---\n🛡️ *Validation humaine requise avant toute communication "
+        f"externe au client `{client_id}` (Trace : `{trace_id}`).* "
+    )
+
+
+# ==============================================================================
+# Interface Streamlit
+# ==============================================================================
+
+
+def init_session_state() -> None:
+    """Initialise les clés de `st.session_state` absentes (opérateur, contexte, historique)."""
+    defaults: dict[str, Any] = {
+        "operator": None,
+        "session_id": f"sess-{uuid.uuid4().hex[:10]}",
+        "client_id": DEFAULT_CLIENT_ID,
+        "severity": DEFAULT_SEVERITY,
+        "messages": [],
+        "last_response": None,
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+
+
+def render_login() -> None:
+    """Affiche le formulaire de connexion et enregistre l'opérateur en session."""
+    st.title("Support Produit - Nexus Platform")
+    st.caption("Connexion opérateur requise.")
+    with st.form("login"):
+        username = st.text_input("Identifiant")
+        password = st.text_input("Mot de passe", type="password")
+        submitted = st.form_submit_button("Se connecter")
+
+    if submitted:
+        operator = authenticate_operator(username, password)
+        if operator is None:
+            st.error("Identifiant ou mot de passe invalide.")
+            return
+        st.session_state.operator = operator
+        st.session_state.messages = [
+            {
+                "role": "assistant",
+                "content": (
+                    f"Bonjour **{operator.identifier}** (Profil : `{operator.role}`).\n\n"
+                    f"Le contexte actif est initialisé sur le client **`{DEFAULT_CLIENT_ID}`** "
+                    f"avec une sévérité **`{DEFAULT_SEVERITY}`** (modifiable dans la barre "
+                    "latérale).\n\n"
+                    "> **Rappel de gouvernance :** Toute réponse proposée par cet assistant "
+                    "doit faire l'objet d'une validation humaine explicite avant envoi au client."
+                ),
+            }
         ]
-    ).send()
+        st.rerun()
 
-    # Ouverture et initialisation du panneau latéral de contexte
-    await update_context_sidebar(
-        operator_id=operator_id,
-        operator_role=operator_role,
-        client_id=default_client_id,
-        severity=default_severity,
+
+def on_context_change() -> None:
+    """Ajoute une notification à la conversation quand le client ou la sévérité change."""
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": (
+                f"⚙️ **Contexte ticket mis à jour :** Client = `{st.session_state.client_id}` | "
+                f"Sévérité = `{st.session_state.severity}`."
+            ),
+        }
     )
 
-    # Message d'accueil rappelant le contexte et la règle de validation humaine
-    await cl.Message(
-        content=(
-            f"Bonjour **{operator_id}** (Profil : `{operator_role}`).\n\n"
-            f"Le contexte actif est initialisé sur le client **`{default_client_id}`** "
-            f"avec une sévérité **`{default_severity}`** (modifiable via l'icône ⚙️ "
-            "des paramètres de chat).\n\n"
-            "> **Rappel de gouvernance :** Toute réponse proposée par cet assistant "
-            "doit faire l'objet d'une validation humaine explicite avant envoi au client."
-        )
-    ).send()
 
-
-@cl.on_settings_update
-async def on_settings_update(updated_settings: dict[str, Any]) -> None:
-    """Met à jour la session et le panneau latéral lorsque l'opérateur modifie `ChatSettings`.
+def render_action_buttons(message_index: int, operator: OperatorSession) -> None:
+    """Affiche les boutons de validation humaine sous la dernière réponse de l'assistant.
 
     Args:
-        updated_settings: Dictionnaire contenant les nouvelles valeurs `client_id` et `severity`.
-
-    Returns:
-        None.
+        message_index: Position du message dans `st.session_state.messages`.
+        operator: Opérateur connecté.
     """
-    client_id = str(updated_settings.get("client_id", "CLI-003"))
-    severity = str(updated_settings.get("severity", "MEDIUM"))
-    operator_id = str(cl.user_session.get("operator_id", "agent"))
-    operator_role = str(cl.user_session.get("operator_role", "AGENT"))
-
-    # Persistance des nouveaux paramètres dans la session courante
-    cl.user_session.set("client_id", client_id)
-    cl.user_session.set("severity", severity)
-
-    # Rafraîchissement immédiat du panneau latéral de contexte
-    await update_context_sidebar(
-        operator_id=operator_id,
-        operator_role=operator_role,
-        client_id=client_id,
-        severity=severity,
-    )
-
-    await cl.Message(
-        content=(
-            f"⚙️ **Contexte ticket mis à jour :** Client = `{client_id}` | "
-            f"Sévérité = `{severity}`."
-        )
-    ).send()
+    message = st.session_state.messages[message_index]
+    actions: list[HumanAction] = message["actions"]
+    for action in actions:
+        if st.button(action.label, key=f"{action.name}-{message_index}"):
+            message["actions"] = []
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": build_action_feedback(
+                        action, operator.identifier, operator.role
+                    ),
+                }
+            )
+            st.rerun()
 
 
-@cl.on_message
-async def on_message(message: cl.Message) -> None:
-    """Traite chaque message saisi par l'opérateur support et affiche la restitution.
-
-    Assemble le payload `ChatRequest`, interroge le microservice FastAPI avec le
-    jeton JWT Bearer, rafraîchit le panneau latéral `ElementSidebar` et affiche les
-    boutons de validation humaine / escalade.
+def handle_user_message(prompt: str, operator: OperatorSession) -> None:
+    """Interroge le backend, puis ajoute la question et la réponse à la conversation.
 
     Args:
-        message: Objet `cl.Message` contenant la question de l'opérateur.
-
-    Returns:
-        None.
+        prompt: Question saisie par l'opérateur.
+        operator: Opérateur connecté.
     """
-    session_id = str(cl.user_session.get("session_id", f"sess-{uuid.uuid4().hex[:8]}"))
-    operator_id = str(cl.user_session.get("operator_id", "agent"))
-    operator_role = str(cl.user_session.get("operator_role", "AGENT"))
-    access_token: Optional[str] = cl.user_session.get("access_token")
-    client_id = str(cl.user_session.get("client_id", "CLI-003"))
-    severity = str(cl.user_session.get("severity", "MEDIUM"))
-    history: list[dict[str, str]] = list(cl.user_session.get("history", []))
-
+    client_id = st.session_state.client_id
+    severity = st.session_state.severity
+    history = [
+        {"role": m["role"], "content": m.get("history_content", m["content"])}
+        for m in st.session_state.messages
+        if m.get("in_history")
+    ]
     request_payload: dict[str, Any] = {
-        "session_id": session_id,
-        "operator_id": operator_id,
-        "operator_role": operator_role,
+        "session_id": st.session_state.session_id,
+        "operator_id": operator.identifier,
+        "operator_role": operator.role,
         "client_id": client_id,
         "severity": severity,
-        "message": message.content,
+        "message": prompt,
         "history": history,
     }
 
+    st.session_state.messages.append(
+        {"role": "user", "content": prompt, "in_history": True}
+    )
+
     try:
-        response_data = await call_backend_chat_api(
-            payload=request_payload,
-            access_token=access_token,
-        )
-    except httpx.HTTPStatusError as http_err:
-        status_code = http_err.response.status_code
-        detail = http_err.response.text
-        await cl.Message(
-            content=(
-                f"⚠️ **Erreur API Backend (`HTTP {status_code}`) :**\n"
-                f"```json\n{detail}\n```"
+        with st.spinner("Interrogation de l'assistant..."):
+            response_data = call_backend_chat_api(
+                payload=request_payload,
+                access_token=operator.access_token,
             )
-        ).send()
+    except httpx.HTTPStatusError as http_err:
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f"⚠️ **Erreur API Backend (`HTTP {http_err.response.status_code}`) :**\n"
+                    f"```json\n{http_err.response.text}\n```"
+                ),
+            }
+        )
         return
     except Exception as exc:
-        await cl.Message(
-            content=(
-                f"❌ **Impossible de joindre le microservice `backend-api` :** `{exc}`"
-            )
-        ).send()
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f"❌ **Impossible de joindre le microservice `backend-api` :** `{exc}`"
+                ),
+            }
+        )
         return
 
     answer_text = str(response_data.get("answer", ""))
     trace_id = str(response_data.get("trace_id", "N/A"))
     escalation_required = bool(response_data.get("escalation_required", False))
 
-    # Mise à jour de l'historique conversationnel en session
-    history.append({"role": "user", "content": message.content})
-    history.append({"role": "assistant", "content": answer_text})
-    cl.user_session.set("history", history)
-
-    # Mise à jour du panneau latéral avec les métadonnées de la réponse
-    await update_context_sidebar(
-        operator_id=operator_id,
-        operator_role=operator_role,
-        client_id=client_id,
-        severity=severity,
-        response_data=response_data,
+    st.session_state.last_response = response_data
+    # La réponse brute est conservée dans l'historique envoyé au backend ;
+    # le bandeau de gouvernance n'est ajouté qu'à l'affichage.
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": answer_text
+            + build_governance_banner(escalation_required, client_id, trace_id),
+            "history_content": answer_text,
+            "in_history": True,
+            "actions": build_human_validation_actions(
+                trace_id=trace_id,
+                client_id=client_id,
+                severity=severity,
+                escalation_required=escalation_required,
+            ),
+        }
     )
 
-    # Ajout d'un bandeau d'alerte explicite si une escalade Manager est requise
-    governance_banner = (
-        "\n\n---\n🚨 **ALERTE GOUVERNANCE :** Ce ticket présente un caractère critique "
-        "ou sensible (`escalation_required = True`). **L'envoi direct est déconseillé : "
-        "veuillez escalader au Responsable Support (`MANAGER`).**"
-        if escalation_required
-        else (
-            "\n\n---\n🛡️ *Validation humaine requise avant toute communication "
-            f"externe au client `{client_id}` (Trace : `{trace_id}`).* "
-        )
+
+def main() -> None:
+    """Point d'entrée Streamlit : connexion, barre latérale de contexte et conversation."""
+    st.set_page_config(
+        page_title="Support Produit - Nexus Platform",
+        layout="wide",
     )
+    init_session_state()
 
-    actions = build_human_validation_actions(
-        trace_id=trace_id,
-        client_id=client_id,
-        severity=severity,
-        escalation_required=escalation_required,
-    )
-
-    await cl.Message(
-        content=f"{answer_text}{governance_banner}",
-        actions=actions,
-    ).send()
-
-
-@cl.action_callback("validate_response")
-async def on_validate_response(action: cl.Action) -> None:
-    """Enregistre la validation humaine de la réponse par l'opérateur connecté.
-
-    Args:
-        action: Objet `cl.Action` contenant les métadonnées (`trace_id`, `client_id`).
-
-    Returns:
-        None.
-    """
-    operator_id = str(cl.user_session.get("operator_id", "agent"))
-    operator_role = str(cl.user_session.get("operator_role", "AGENT"))
-    payload = action.payload or {}
-    trace_id = payload.get("trace_id", "N/A")
-    client_id = payload.get("client_id", "N/A")
-    escalation_required = bool(payload.get("escalation_required", False))
-
-    # Si une escalade est requise et que l'opérateur est simple AGENT, avertir
-    if escalation_required and operator_role == "AGENT":
-        await cl.Message(
-            content=(
-                f"⚠️ **Validation bloquée pour le profil `AGENT` :** Le ticket `{client_id}` "
-                f"(Trace `{trace_id}`) requiert une escalade vers un profil **`MANAGER`** "
-                "avant toute communication externe."
-            )
-        ).send()
+    operator: Optional[OperatorSession] = st.session_state.operator
+    if operator is None:
+        render_login()
         return
 
-    await cl.Message(
-        content=(
-            f"✅ **Réponse validée** par `{operator_id}` (`{operator_role}`) "
-            f"pour envoi au client **`{client_id}`** *(Trace : `{trace_id}`)*."
+    with st.sidebar:
+        st.header("Contexte Support Nexus")
+        st.selectbox(
+            "Client concerné par le ticket (CLI-001 à CLI-015)",
+            CLIENT_ID_OPTIONS,
+            key="client_id",
+            on_change=on_context_change,
         )
-    ).send()
-
-
-@cl.action_callback("escalate_response")
-async def on_escalate_response(action: cl.Action) -> None:
-    """Déclenche l'escalade du ticket vers le Responsable Support (`MANAGER`).
-
-    Args:
-        action: Objet `cl.Action` contenant les métadonnées du ticket.
-
-    Returns:
-        None.
-    """
-    operator_id = str(cl.user_session.get("operator_id", "agent"))
-    operator_role = str(cl.user_session.get("operator_role", "AGENT"))
-    payload = action.payload or {}
-    trace_id = payload.get("trace_id", "N/A")
-    client_id = payload.get("client_id", "N/A")
-    severity = payload.get("severity", "N/A")
-
-    await cl.Message(
-        content=(
-            f"🚨 **Escalade enregistrée vers le Responsable Support (`MANAGER`)** "
-            f"par `{operator_id}` (`{operator_role}`) — Client : **`{client_id}`**, "
-            f"Sévérité : **`{severity}`**, Trace : `{trace_id}`."
+        st.selectbox(
+            "Niveau de sévérité du ticket (SLA)",
+            SEVERITY_OPTIONS,
+            key="severity",
+            on_change=on_context_change,
         )
-    ).send()
+        context_placeholder = st.empty()
+        if st.button("Se déconnecter"):
+            for key in ("operator", "messages", "last_response", "session_id"):
+                del st.session_state[key]
+            st.rerun()
 
+    st.title("Support Produit - Nexus Platform")
 
-@cl.action_callback("reject_response")
-async def on_reject_response(action: cl.Action) -> None:
-    """Enregistre le rejet du brouillon LLM par l'opérateur et invite à reformuler.
+    last_message_index = len(st.session_state.messages) - 1
+    for index, message in enumerate(st.session_state.messages):
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            if message.get("actions") and index == last_message_index:
+                render_action_buttons(index, operator)
 
-    Args:
-        action: Objet `cl.Action` contenant les métadonnées de la trace.
+    if prompt := st.chat_input("Posez votre question support..."):
+        handle_user_message(prompt, operator)
+        st.rerun()
 
-    Returns:
-        None.
-    """
-    operator_id = str(cl.user_session.get("operator_id", "agent"))
-    payload = action.payload or {}
-    trace_id = payload.get("trace_id", "N/A")
-
-    await cl.Message(
-        content=(
-            f"❌ **Brouillon rejeté** par `{operator_id}` *(Trace : `{trace_id}`)*. "
-            "Vous pouvez préciser votre question ou ajuster le contexte dans les paramètres ⚙️."
+    # Rendu en dernier pour refléter la réponse la plus récente
+    context_placeholder.markdown(
+        build_sidebar_markdown(
+            operator_id=operator.identifier,
+            operator_role=operator.role,
+            client_id=st.session_state.client_id,
+            severity=st.session_state.severity,
+            response_data=st.session_state.last_response,
         )
-    ).send()
+    )
+
+
+if __name__ == "__main__":
+    main()
 
 
 __all__ = [

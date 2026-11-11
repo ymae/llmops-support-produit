@@ -44,7 +44,7 @@ up: ## Démarre l'ensemble des conteneurs Docker en arrière-plan et affiche leu
 	@mkdir -p logs
 	$(DOCKER_COMPOSE) up -d $(SERVICES)
 	@echo "=============================================================================="
-	@echo "  Frontend Chainlit     : http://localhost:8000"
+	@echo "  Frontend Streamlit    : http://localhost:8000"
 	@echo "  Backend API (Swagger) : http://localhost:8080/docs"
 	@echo "  LiteLLM Proxy         : http://localhost:4000"
 	@echo "  Langfuse Local        : http://localhost:3000"

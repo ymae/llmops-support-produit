@@ -1,1 +1,1 @@
-"""Package de l'interface opérateur Frontend (Chainlit)."""
+"""Package de l'interface opérateur Frontend (Streamlit)."""

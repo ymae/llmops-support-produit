@@ -1,7 +1,7 @@
-"""Tests unitaires du module Frontend Chainlit (`src/frontend/app.py`).
+"""Tests unitaires du module Frontend Streamlit (`src/frontend/app.py`).
 
 Vérifie :
-- L'authentification obligatoire (`@cl.password_auth_callback`) pour les profils
+- L'authentification obligatoire pour les profils
   `agent` (rôle `AGENT`) et `manager` (rôle `MANAGER`), la génération d'un jeton
   JWT signé en HS256 dans les métadonnées utilisateur, ainsi que le rejet des
   identifiants invalides.
@@ -21,8 +21,8 @@ from src.frontend.app import (
 )
 
 
-def test_chainlit_client_and_severity_options() -> None:
-    """Vérifie que les listes de sélection Chainlit respectent le contrat métier V1/V2.
+def test_streamlit_client_and_severity_options() -> None:
+    """Vérifie que les listes de sélection Streamlit respectent le contrat métier V1/V2.
 
     Args:
         Aucun argument requis.
@@ -50,9 +50,8 @@ def test_authenticate_operator_agent_and_manager_profiles_with_jwt() -> None:
     agent_user = authenticate_operator("agent", "agent-pass")
     assert agent_user is not None
     assert agent_user.identifier == "agent"
-    assert agent_user.metadata["role"] == "AGENT"
-    assert "access_token" in agent_user.metadata
-    decoded_agent = decode_access_token(agent_user.metadata["access_token"])
+    assert agent_user.role == "AGENT"
+    decoded_agent = decode_access_token(agent_user.access_token)
     assert decoded_agent.username == "agent"
     assert decoded_agent.role == OperatorRole.AGENT
 
@@ -60,9 +59,8 @@ def test_authenticate_operator_agent_and_manager_profiles_with_jwt() -> None:
     manager_user = authenticate_operator("manager", "manager-pass")
     assert manager_user is not None
     assert manager_user.identifier == "manager"
-    assert manager_user.metadata["role"] == "MANAGER"
-    assert "access_token" in manager_user.metadata
-    decoded_manager = decode_access_token(manager_user.metadata["access_token"])
+    assert manager_user.role == "MANAGER"
+    decoded_manager = decode_access_token(manager_user.access_token)
     assert decoded_manager.username == "manager"
     assert decoded_manager.role == OperatorRole.MANAGER
 
