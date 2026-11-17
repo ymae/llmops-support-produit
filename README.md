@@ -4,7 +4,7 @@ Un assistant destiné aux agents (`AGENT`) et responsables (`MANAGER`) du suppor
 
 Il repose sur :
 
-- **Chainlit** : interface conversationnelle opérateur avec authentification par rôle, sélecteurs de contexte ticket (`Client ID`, `Sévérité`), panneau latéral de gouvernance et boutons d'action humaine.
+- **Streamlit** : interface conversationnelle opérateur avec authentification par rôle, sélecteurs de contexte ticket (`Client ID`, `Sévérité`), barre latérale de gouvernance (`st.sidebar`) et boutons d'action humaine.
 - **FastAPI + Pydantic + LangChain** : microservice Backend API sécurisé par jetons JWT (HS256) / Bearer Token, validation stricte des contrats d'entrée/sortie et gestion de la mémoire par session.
 - **LiteLLM Proxy** : passerelle d'inférence LLM dédiée découplant le backend du fournisseur externe (**Groq**).
 - **Loguru (JSONL) + Langfuse Auto-Hébergé (PostgreSQL)** : double niveau d'observabilité associant journalisation technique structurée (`logs/app.jsonl`) et traçabilité cognitive LLM (`Langfuse` self-hosted).
@@ -18,7 +18,7 @@ Il repose sur :
 
 ```mermaid
 flowchart LR
-    Op["Opérateur Support<br/>(AGENT / MANAGER)"] -->|"HTTP :8000<br/>Login + ChatSettings"| FE["Conteneur frontend<br/>(Chainlit)"]
+    Op["Opérateur Support<br/>(AGENT / MANAGER)"] -->|"HTTP :8000<br/>Login + Sidebar Context"| FE["Conteneur frontend<br/>(Streamlit)"]
     FE -->|"POST /api/v1/chat<br/>Bearer JWT (HS256)"| BE["Conteneur backend-api<br/>(FastAPI + Pydantic + LangChain)"]
     BE -->|"Audit technique JSONL"| LOG["logs/app.jsonl<br/>(Logger JSON structuré)"]
     BE -->|"Traces cognitives LLM"| LF["Conteneur langfuse-server<br/>(Langfuse :3000)"]
@@ -31,10 +31,8 @@ flowchart LR
 
 ```txt
 llmops-support-produit/
-├── .chainlit/                  # Configuration de l'interface Chainlit
 ├── .dockerignore               # Exclusions pour la construction des images Docker
 ├── .env.example                # Modèle des variables d'environnement (à copier vers .env)
-├── chainlit.md                 # Page d'accueil Markdown de l'interface Chainlit
 ├── docker-compose.yml          # Orchestration des 5 services + conteneur de tests
 ├── Makefile                    # Commandes d'automatisation (setup, build, up, tests, logs...)
 ├── pyproject.toml              # Dépendances Python par groupe (backend, frontend, dev) gérées par uv
@@ -68,15 +66,15 @@ llmops-support-produit/
 │   │   └── prompts/
 │   │       └── support_prompts.py # Prompts système et templates conversationnels
 │   └── frontend/
-│       ├── Dockerfile.frontend # Image Docker de l'interface Chainlit
-│       └── app.py              # Application Chainlit (auth, ChatSettings, ElementSidebar, actions)
+│       ├── Dockerfile.frontend # Image Docker de l'interface Streamlit
+│       └── app.py              # Application Streamlit (auth, barre latérale de contexte/gouvernance, actions HitL)
 └── tests/                      # Suite de tests unitaires et d'intégration (pytest)
     ├── Dockerfile.test         # Image Docker dédiée à l'exécution des tests
     ├── conftest.py             # Fixtures partagées
     ├── test_api.py             # Tests du contrat Pydantic, des routes FastAPI et des erreurs
     ├── test_auth_and_memory.py # Tests JWT HS256, rôles opérateurs et mémoire de session
     ├── test_container_integration.py # Tests d'intégration inter-conteneurs Docker
-    └── test_frontend.py        # Tests unitaires de l'interface Chainlit
+    └── test_frontend.py        # Tests unitaires de l'interface Streamlit
 ```
 
 ---
@@ -112,9 +110,9 @@ Le fichier `.env` contient les secrets de l'application et n'est jamais versionn
    ```env
    GROQ_API_KEY=gsk_votre_cle_groq_ici
    ```
-2. **(Recommandé) Générer des secrets cryptographiques forts** pour les jetons JWT et Chainlit :
+2. **(Recommandé) Générer un secret cryptographique fort** pour la signature des jetons JWT :
    ```bash
-   python3 -c 'import secrets; print("JWT_SECRET_KEY=" + secrets.token_hex(32)); print("CHAINLIT_AUTH_SECRET=" + secrets.token_hex(32))'
+   python3 -c 'import secrets; print("JWT_SECRET_KEY=" + secrets.token_hex(32))'
    ```
 
 #### Récapitulatif des principales variables du fichier `.env`
@@ -128,7 +126,6 @@ Le fichier `.env` contient les secrets de l'application et n'est jamais versionn
 | `API_SECRET_TOKEN` | **Oui** | Jeton Bearer statique accepté par le Backend API | `nexus-v1-secret-bearer-token-2026` |
 | `JWT_SECRET_KEY` | **Oui** | Clé secrète de signature des jetons JWT (HS256) | `nexus-v1-jwt-hs256-secret-key-2026-change-me` |
 | `JWT_EXPIRE_MINUTES` | Non | Durée de validité des jetons JWT (en minutes) | `60` |
-| `CHAINLIT_AUTH_SECRET` | **Oui** | Secret de signature des sessions d'authentification Chainlit | `nexus-chainlit-auth-secret-key-v1-2026-change-me` |
 | `AGENT_USERNAME` / `AGENT_PASSWORD` | **Oui** | Identifiants de l'opérateur ayant le rôle `AGENT` | `agent` / `agent-pass` |
 | `MANAGER_USERNAME` / `MANAGER_PASSWORD` | **Oui** | Identifiants du responsable ayant le rôle `MANAGER` | `manager` / `manager-pass` |
 | `LOG_FILE_PATH` | Non | Chemin du fichier de journalisation JSON structurée | `logs/app.jsonl` |
@@ -162,26 +159,28 @@ Une fois `make up` (ou `make all`) exécuté, les services suivants sont accessi
 
 | Service | Rôle | URL locale | Identifiants par défaut |
 |---|---|---|---|
-| **Frontend Chainlit** | Interface conversationnelle Opérateur Support | [http://localhost:8000](http://localhost:8000) | • Profil **Agent** : `agent` / `agent-pass`<br/>• Profil **Manager** : `manager` / `manager-pass` |
+| **Frontend Streamlit** | Interface conversationnelle Opérateur Support | [http://localhost:8000](http://localhost:8000) | • Profil **Agent** : `agent` / `agent-pass`<br/>• Profil **Manager** : `manager` / `manager-pass` |
 | **Backend API (Swagger)** | Documentation interactive OpenAPI du microservice FastAPI | [http://localhost:8080/docs](http://localhost:8080/docs) | Header `Authorization: Bearer <JWT ou API_SECRET_TOKEN>` |
 | **LiteLLM Proxy** | Passerelle d'inférence LLM vers Groq | [http://localhost:4000](http://localhost:4000) | Clé : `sk-nexus-litellm-master-key-v1` |
 | **Langfuse Auto-Hébergé** | Interface web d'observabilité cognitive LLM | [http://localhost:3000](http://localhost:3000) | • Email : `admin@nexus-local.internal`<br/>• Mot de passe : `nexus-admin-local-pass` |
 
-### 4.2. Utiliser l'interface Opérateur Support (Chainlit)
+### 4.2. Utiliser l'interface Opérateur Support (Streamlit)
 
-1. **Connexion :** Ouvrez [http://localhost:8000](http://localhost:8000) et connectez-vous avec le compte `agent` (`agent-pass`) ou `manager` (`manager-pass`). Un jeton JWT signé (HS256) est automatiquement émis pour votre session.
-2. **Configuration du contexte ticket (`ChatSettings`) :** Cliquez sur l'icône des paramètres dans la barre de saisie pour sélectionner :
-   - Le **Client ID** parmi la liste autorisée (`CLI-001` à `CLI-015`).
-   - Le **Niveau de sévérité** du ticket (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`).
-3. **Traitement de la demande :** Saisissez la question ou le problème technique soumis par le client.
-4. **Inspection du panneau latéral (`ElementSidebar`) :** À chaque réponse, le volet latéral droit affiche :
+1. **Connexion :** Ouvrez [http://localhost:8000](http://localhost:8000) et authentifiez-vous via le formulaire Streamlit avec le compte `agent` (`agent-pass`) ou `manager` (`manager-pass`). Un jeton JWT signé (HS256) est automatiquement généré et conservé dans la session (`st.session_state.operator`). Un bouton **Se déconnecter** est disponible à tout moment dans la barre latérale.
+2. **Configuration du contexte ticket (`st.sidebar`) :** Dans le volet latéral gauche (**Contexte Support Nexus**), sélectionnez :
+   - Le **Client ID** parmi la liste autorisée (`CLI-001` à `CLI-015`, valeur par défaut `CLI-003`).
+   - Le **Niveau de sévérité** du ticket (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`, valeur par défaut `MEDIUM`).
+   Tout changement déclenche automatiquement une notification de mise à jour dans le fil de discussion.
+3. **Traitement de la demande :** Saisissez la question ou le problème technique soumis par le client dans le champ de conversation (`Posez votre question support...`).
+4. **Inspection du panneau latéral (`st.sidebar`) :** À chaque réponse, le volet latéral gauche restitue dynamiquement :
    - Le profil de l'opérateur connecté (`AGENT` ou `MANAGER`),
    - Le contexte actif du ticket (`client_id`, `severity`, `product_version`, `sla_level`),
-   - Les indicateurs de gouvernance (`requires_human_validation`, `escalation_required`),
+   - Les indicateurs de gouvernance (`requires_human_validation`, `escalation_required`, sources mobilisées),
    - L'identifiant unique de trace (`trace_id`) reliant le Logger JSON et Langfuse.
-5. **Validation humaine obligatoire (*Human-in-the-Loop*) :** Sous chaque réponse de l'assistant, utilisez les boutons d'action :
-   - **Valider la réponse (Envoi Client)** : confirme la relecture humaine de la proposition.
-   - **Escalader au Manager Support (N2)** : signale qu'une prise en charge par un responsable support est requise.
+5. **Validation humaine obligatoire (*Human-in-the-Loop*) :** Sous chaque réponse de l'assistant, un bandeau de gouvernance rappelle l'obligation de relecture humaine (ou l'alerte d'escalade critique) et propose trois boutons d'action :
+   - **✅ Valider la réponse (Prêt pour envoi client)** : confirme la relecture humaine de la proposition (bloqué automatiquement pour un profil `AGENT` si `escalation_required = True`).
+   - **🚨 Escalader au Responsable Support (MANAGER)** : enregistre qu'une prise en charge par un responsable support est requise.
+   - **❌ Rejeter / Reformuler le brouillon** : rejette la proposition afin de préciser la question ou d'ajuster le contexte dans la barre latérale.
 
 ### 4.3. Interroger directement l'API Backend (Swagger `/docs` ou `curl`)
 
@@ -263,7 +262,7 @@ Toutes les routes métiers (à l'exception de `/health` et `/api/v1/auth/login`)
 | `403 Forbidden` | Jeton Bearer ou JWT invalide, altéré ou expiré | Rejet immédiat ; événement `auth_invalid_token` tracé dans `logs/app.jsonl`. |
 | `422 Unprocessable Entity` | Violation du contrat d'entrée Pydantic : champ vide, rôle/sévérité inconnu, ou **client non reconnu hors de `CLI-001`..`CLI-015`** (ex. : `CLI-099`) | Garde-fou déterministe bloquant la requête avant toute invocation de LiteLLM / Groq ; événement `validation_error` tracé dans `logs/app.jsonl`. |
 | `413` / `429` | Limite de taille de requête ou quota de requêtes atteint sur le fournisseur LLM (Groq) | Intercepté par `run_llm_safely` et journalisé avec le niveau `WARNING`. |
-| `502 Bad Gateway` | Passerelle `litellm-proxy` ou API externe Groq injoignable / en erreur | Intercepté par `run_llm_safely`, journalisé dans `logs/app.jsonl` (`llm_gateway_error`) et restitué proprement à l'interface Chainlit. |
+| `502 Bad Gateway` | Passerelle `litellm-proxy` ou API externe Groq injoignable / en erreur | Intercepté par `run_llm_safely`, journalisé dans `logs/app.jsonl` (`llm_gateway_error`) et restitué proprement à l'interface Streamlit. |
 
 ---
 
@@ -290,13 +289,13 @@ Le conteneur `langfuse-server` (adossé à `langfuse-db` sous PostgreSQL 16) est
 ### Sécurité et gouvernance *Human-in-the-Loop*
 
 - **Découplage de l'inférence LLM :** Le service `backend-api` n'interroge jamais l'API Groq en direct ; il communique exclusivement avec le conteneur interne `litellm-proxy` (`http://litellm-proxy:4000/v1`), isolant ainsi la clé externe `GROQ_API_KEY`.
-- **Responsabilité humaine systématique :** Le contrat de sortie `ChatResponse` maintient `requires_human_validation=True`. L'interface Chainlit accompagne chaque proposition de boutons de validation ou d'escalade, et journalise toute décision de l'opérateur.
+- **Responsabilité humaine systématique :** Le contrat de sortie `ChatResponse` maintient `requires_human_validation=True`. L'interface Streamlit accompagne chaque proposition d'un bandeau de gouvernance et de boutons d'action (validation, escalade ou rejet), en bloquant la validation directe par un opérateur `AGENT` lorsqu'une escalade Manager est requise.
 
 ---
 
 ## 7. Tests automatisés
 
-Le projet dispose d'une suite de tests couvrant la sécurité (JWT HS256, Bearer Token, hachage et comparaison en temps constant), le contrat Pydantic (rejet de `CLI-099`, champs vides), la mémoire de session, le flux nominal mocké de `/api/v1/chat`, l'interface Chainlit et l'intégration conteneurisée.
+Le projet dispose d'une suite de tests couvrant la sécurité (JWT HS256, Bearer Token, hachage et comparaison en temps constant), le contrat Pydantic (rejet de `CLI-099`, champs vides), la mémoire de session, le flux nominal mocké de `/api/v1/chat`, l'interface Streamlit et l'intégration conteneurisée.
 
 ### Exécution locale rapide (via `uv`)
 

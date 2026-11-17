@@ -20,3 +20,4 @@ logs/*.log
 exemple/
 .vscode
 docs/
+AGENT.md

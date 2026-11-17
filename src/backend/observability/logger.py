@@ -68,7 +68,7 @@ def log_structured_event(
         event: Code court identifiant la nature de l'événement (ex: `auth_failure`).
         message: Description explicite de l'événement en français.
         level: Niveau de sévérité (`INFO`, `WARNING`, `ERROR`). Par défaut `"INFO"`.
-        session_id: Identifiant de la session conversationnelle Chainlit.
+        session_id: Identifiant de la session conversationnelle Streamlit.
         operator_id: Identifiant de l'opérateur support connecté.
         operator_role: Rôle métier de l'opérateur (`AGENT` ou `MANAGER`).
         client_id: Identifiant du client concerné par le ticket (ex: `CLI-003`).

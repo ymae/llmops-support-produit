@@ -1,4 +1,4 @@
-"""Constantes métiers partagées entre le microservice Backend API et le Frontend Chainlit.
+"""Constantes métiers partagées entre le microservice Backend API et le Frontend Streamlit.
 
 Ce module constitue la source unique de vérité pour :
 - La liste blanche des identifiants clients reconnus (`CLI-001` à `CLI-015`).
@@ -6,7 +6,7 @@ Ce module constitue la source unique de vérité pour :
 - Les mots-clés critiques déclenchant une escalade obligatoire vers un profil `MANAGER`.
 """
 
-# Liste ordonnée des 15 identifiants clients configurables dans Chainlit (CLI-001 à CLI-015)
+# Liste ordonnée des 15 identifiants clients configurables dans Streamlit (CLI-001 à CLI-015)
 CLIENT_ID_OPTIONS: list[str] = [f"CLI-{index:03d}" for index in range(1, 16)]
 
 # Ensemble immuable utilisé par le validateur Pydantic pour un contrôle en O(1)

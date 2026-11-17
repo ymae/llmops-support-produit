@@ -83,14 +83,10 @@ class Settings(BaseSettings):
     )
     backend_api_url: str = Field(
         default="http://backend-api:8080",
-        description="URL du microservice backend appelée par le frontend Chainlit.",
+        description="URL du microservice backend appelée par le frontend Streamlit.",
     )
 
-    # --- 3. Authentification Opérateurs Frontend (Chainlit) ---
-    chainlit_auth_secret: str = Field(
-        default="nexus-chainlit-auth-secret-key-v1-2026-change-me",
-        description="Secret de signature des sessions d'authentification Chainlit.",
-    )
+    # --- 3. Authentification Opérateurs Frontend (Streamlit) ---
     agent_username: str = Field(
         default="agent",
         description="Identifiant de connexion du profil Agent Support (rôle AGENT).",

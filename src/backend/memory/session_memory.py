@@ -25,7 +25,7 @@ def get_thread_id(session_id: str, operator_id: Optional[str] = None) -> str:
     """Construit l'identifiant unique de fil de conversation (`thread_id`).
 
     Args:
-        session_id: Identifiant de la session conversationnelle Chainlit.
+        session_id: Identifiant de la session conversationnelle Streamlit.
         operator_id: Identifiant optionnel de l'opérateur support.
 
     Returns:

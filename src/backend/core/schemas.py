@@ -157,7 +157,7 @@ class ChatRequest(BaseModel):
 
     session_id: NonEmptyStr = Field(
         ...,
-        description="Identifiant unique de la session conversationnelle Chainlit.",
+        description="Identifiant unique de la session conversationnelle Streamlit.",
         examples=["sess-gd01-demo"],
     )
     operator_id: NonEmptyStr = Field(
